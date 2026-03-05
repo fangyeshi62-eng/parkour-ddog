@@ -153,6 +153,9 @@ def play(args):
     # prepare environment
     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
     env.reset()
+    print(f"当前地形类型索引: {env.terrain_types[0].item()}")
+    print(f"当前地形类型名称: {env_cfg.terrain.BarrierTrack_kwargs['options'][env.terrain_types[0].item()]}")
+    print(f"当前难度等级: {env.terrain_levels[0].item()}")
     print("terrain_levels:", env.terrain_levels.float().mean(), env.terrain_levels.float().max(), env.terrain_levels.float().min())
     obs = env.get_observations()
     critic_obs = env.get_privileged_observations()
@@ -490,7 +493,7 @@ def play(args):
             start_time = time.time_ns()
 
 if __name__ == '__main__':
-    EXPORT_POLICY = False
+    EXPORT_POLICY = True
     args = get_args([
         dict(name= "--slow", type= float, default= 0., help= "slow down the simulation by sleep secs (float) every frame"),
         dict(name= "--show_teacher", action= "store_true", default= False, help= "show teacher actions"),
