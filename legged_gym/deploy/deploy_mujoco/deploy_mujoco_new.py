@@ -473,7 +473,8 @@ if __name__ == "__main__":
                 obs[0:3] = (rot_mat_T @ input_lin_vel_world)* lin_vel_scale 
                 obs[3:6] = omega * ang_vel_scale
                 obs[6:9] = get_gravity_orientation(quat)
-                obs[9:12] = current_cmd * np.array([lin_vel_scale, lin_vel_scale, ang_vel_scale])
+                # obs[9:12] = current_cmd * np.array([lin_vel_scale, lin_vel_scale, ang_vel_scale])
+                obs[9:12]=0
                 obs[12:24] = (qj - default_angles) * dof_pos_scale
                 obs[24:36] = dqj * dof_vel_scale
                 obs[36:48] = action
