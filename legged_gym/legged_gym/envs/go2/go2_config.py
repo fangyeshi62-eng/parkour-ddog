@@ -66,7 +66,7 @@ class Go2RoughCfg( LeggedRobotCfg ):
         slope_treshold = 1.
 
         TerrainPerlin_kwargs = dict(
-            zScale= 0.07,
+            zScale= 0,
             frequency= 10,
         )
     

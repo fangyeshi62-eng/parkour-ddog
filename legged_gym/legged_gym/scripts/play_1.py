@@ -89,7 +89,7 @@ def play(args):
     if env_cfg.terrain.selected == "BarrierTrack":
         env_cfg.env.num_envs = min(env_cfg.env.num_envs, 1)
         env_cfg.env.episode_length_s = 20
-        env_cfg.terrain.max_init_terrain_level = 0
+        env_cfg.terrain.max_init_terrain_level = 3
         env_cfg.terrain.num_rows = 4
         env_cfg.terrain.num_cols = 8
         env_cfg.terrain.BarrierTrack_kwargs["options"] = [
@@ -123,8 +123,8 @@ def play(args):
         y= [-0.05, 0.05],
     )
     # env_cfg.termination.termination_terms = []
-    #env_cfg.termination.timeout_at_border = False
-    #env_cfg.termination.timeout_at_finished = False
+    env_cfg.termination.timeout_at_border = False
+    env_cfg.termination.timeout_at_finished = False
     env_cfg.viewer.debug_viz = True
     env_cfg.viewer.draw_measure_heights = False
     env_cfg.viewer.draw_height_measurements = False
@@ -153,10 +153,7 @@ def play(args):
     # prepare environment
     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
     env.reset()
-    # print(f"当前地形类型索引: {env.terrain_types[0].item()}")
-    # print(f"当前地形类型名称: {env_cfg.terrain.BarrierTrack_kwargs['options'][env.terrain_types[0].item()]}")
-    # print(f"当前难度等级: {env.terrain_levels[0].item()}")
-    # print("terrain_levels:", env.terrain_levels.float().mean(), env.terrain_levels.float().max(), env.terrain_levels.float().min())
+    print("terrain_levels:", env.terrain_levels.float().mean(), env.terrain_levels.float().max(), env.terrain_levels.float().min())
     obs = env.get_observations()
     critic_obs = env.get_privileged_observations()
     # register debugging options to manually trigger disruption
@@ -298,15 +295,19 @@ def play(args):
                 # env.command_ranges["lin_vel_x"] = [env_cfg.commands.ranges.lin_vel_x[0], env_cfg.commands.ranges.lin_vel_x[0]]
             if ui_event.action == "leftward" and ui_event.value > 0:
                 env.commands[:, 1] = env_cfg.commands.ranges.lin_vel_y[1]
+                print("leftward")
                 # env.command_ranges["lin_vel_y"] = [env_cfg.commands.ranges.lin_vel_y[1], env_cfg.commands.ranges.lin_vel_y[1]]
             if ui_event.action == "rightward" and ui_event.value > 0:
                 env.commands[:, 1] = env_cfg.commands.ranges.lin_vel_y[0]
+                print("rightward")
                 # env.command_ranges["lin_vel_y"] = [env_cfg.commands.ranges.lin_vel_y[0], env_cfg.commands.ranges.lin_vel_y[0]]
             if ui_event.action == "leftturn" and ui_event.value > 0:
                 env.commands[:, 2] = env_cfg.commands.ranges.ang_vel_yaw[1]
+                print("leftturn")
                 # env.command_ranges["ang_vel_yaw"] = [env_cfg.commands.ranges.ang_vel_yaw[1], env_cfg.commands.ranges.ang_vel_yaw[1]]
             if ui_event.action == "rightturn" and ui_event.value > 0:
                 env.commands[:, 2] = env_cfg.commands.ranges.ang_vel_yaw[0]
+                print("rightturn")
                 # env.command_ranges["ang_vel_yaw"] = [env_cfg.commands.ranges.ang_vel_yaw[0], env_cfg.commands.ranges.ang_vel_yaw[0]]
             if ui_event.action == "leftdrag" and ui_event.value > 0:
                 env.root_states[:, 7:10] += quat_rotate(env.base_quat, torch.tensor([[0., 0.5, 0.]], device= env.device))

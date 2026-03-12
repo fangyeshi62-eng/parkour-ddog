@@ -37,6 +37,38 @@ class EstimatorMixin:
         self.replace_state_prob = replace_state_prob
         assert (self.replace_state_prob <= 0.) or (not self.use_actor_rnn), "You cannot replace the actor's observation (part) after the actor already used it's memory module. "
         self.build_estimator(**kwargs)
+        # print(f"\n" + "="*20 + " Estimator Debug " + "="*20)
+        # print(f"Estimator 输入组件列表: {self.estimator_obs_components}")
+        
+        # # 获取所有组件的名称列表，用于计算相邻差值
+        # all_components = list(self.obs_segments.keys())
+        
+        # for comp in self.estimator_obs_components:
+        #     segment = self.obs_segments[comp]
+            
+        #     # 逻辑判定：segment 到底是什么类型
+        #     if isinstance(segment, (tuple, list)):
+        #         if len(segment) >= 2:
+        #             # 情况 A: 标准元组 (start, stop)
+        #             start, end = segment[0], segment[1]
+        #         else:
+        #             # 情况 B: 单元素元组 (start,)，需寻找下一个组件确定结尾
+        #             start = segment[0]
+        #             idx = all_components.index(comp)
+        #             end = self.obs_segments[all_components[idx+1]][0] if idx+1 < len(all_components) else "End"
+        #     else:
+        #         # 情况 C: 直接是整数 start_index
+        #         start = segment
+        #         idx = all_components.index(comp)
+        #         if idx + 1 < len(all_components):
+        #             next_val = self.obs_segments[all_components[idx+1]]
+        #             end = next_val[0] if isinstance(next_val, (tuple, list)) else next_val
+        #         else:
+        #             end = "End"
+
+        #     dim = (end - start) if isinstance(end, int) else "未知"
+        #     print(f"组件: {comp:18} | 索引: {start} -> {end} | 维度: {dim}")
+        # print("="*57 + "\n")
 
     def build_estimator(self, **kwargs):
         """ This implementation is not flexible enough, but it is enough for now. """
