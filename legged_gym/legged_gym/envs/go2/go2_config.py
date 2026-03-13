@@ -26,6 +26,7 @@ class Go2RoughCfg( LeggedRobotCfg ):
         num_actions = 12
         send_timeouts = True # send time out information to the algorithm
         episode_length_s = 20 # episode length in seconds
+        history_len = 10
 
         obs_components = [
             "lin_vel",
@@ -66,7 +67,7 @@ class Go2RoughCfg( LeggedRobotCfg ):
         slope_treshold = 1.
 
         TerrainPerlin_kwargs = dict(
-            zScale= 0,
+            zScale= 0.00,
             frequency= 10,
         )
     
@@ -131,8 +132,8 @@ class Go2RoughCfg( LeggedRobotCfg ):
     class domain_rand( LeggedRobotCfg.domain_rand ):
         randomize_com = True
         class com_range:
-            x = [-0.2, 0.2]
-            y = [-0.1, 0.1]
+            x = [-0.02, 0.02]
+            y = [-0.01, 0.01]
             z = [-0.05, 0.05]
 
         randomize_motor = True
@@ -142,7 +143,7 @@ class Go2RoughCfg( LeggedRobotCfg ):
         added_mass_range = [1.0, 3.0]
 
         randomize_friction = True
-        friction_range = [0., 2.]
+        friction_range = [0., 3.]
 
         init_base_pos_range = dict(
             x= [0.05, 0.6],
@@ -150,7 +151,7 @@ class Go2RoughCfg( LeggedRobotCfg ):
         )
         init_base_rot_range = dict(
             roll= [-0.75, 0.75],
-            pitch= [-0.75, 0.75],
+            pitch= [-0.5, 0.5],
         )
         init_base_vel_range = dict(
             x= [-0.2, 1.5],
@@ -167,22 +168,37 @@ class Go2RoughCfg( LeggedRobotCfg ):
         push_interval_s = 2
 
     class rewards( LeggedRobotCfg.rewards ):
-        class scales:
-            tracking_lin_vel = 1.
+        class scales(LeggedRobotCfg.rewards.scales):
+            tracking_lin_vel = 2.
             tracking_ang_vel = 1.
-            energy_substeps = -2e-5
-            stand_still = -2.
-            dof_error_named = -1.
-            dof_error = -0.01
-            # penalty for hardware safety
-            exceed_dof_pos_limits = -0.4
-            exceed_torque_limits_l1norm = -0.4
-            dof_vel_limits = -0.4
+            lin_vel_z = -4
+            ang_vel_xy =  -0.1
+            orientation = -0.2
+            torques = -0.00001
+            dof_vel = -0.
+            dof_acc = -2.5e-7
+            base_height = -1.0
+            feet_air_time = 2.0
+            collision = -1
+            stumble = -0.05
+            stand_still = -1.0
+            action_rate = -0.5
+            action_smoothness = -0.1  # 改为正值，因为函数返回负error
+            
+            feet_contact_forces = -0.00015
+            foot_clearance = -0.5
+            foot_mirror = -0.05
+            foot_slide = -0.05
+            has_contact = 1.0
+            hip_pos = -5.0
+            powers = -2e-5
         dof_error_names = ["FL_hip_joint", "FR_hip_joint", "RL_hip_joint", "RR_hip_joint"]
         only_positive_rewards = False
         soft_dof_vel_limit = 0.9
         soft_dof_pos_limit = 0.9
         soft_torque_limit = 0.9
+        clearance_height_target = -0.22
+        base_height_target = 0.32
 
     class normalization( LeggedRobotCfg.normalization ):
         class obs_scales( LeggedRobotCfg.normalization.obs_scales ):
@@ -264,17 +280,11 @@ class Go2RoughCfgPPO( LeggedRobotCfgPPO ):
         algorithm_class_name = "EstimatorPPO"
         experiment_name = "rough_go2"
         
-        resume = False
-        load_run = None
+        resume = True
+        load_run = "/root/mym/parkour-main/legged_gym/logs/rough_go2/Mar12_02-25-57_Go2Rough"
 
-        run_name = "".join(["Go2Rough",
-            ("_pEnergy" + np.format_float_scientific(Go2RoughCfg.rewards.scales.energy_substeps, precision= 1, trim= "-") if Go2RoughCfg.rewards.scales.energy_substeps != 0 else ""),
-            ("_pDofErr" + np.format_float_scientific(Go2RoughCfg.rewards.scales.dof_error, precision= 1, trim= "-") if Go2RoughCfg.rewards.scales.dof_error != 0 else ""),
-            ("_pDofErrN" + np.format_float_scientific(Go2RoughCfg.rewards.scales.dof_error_named, precision= 1, trim= "-") if Go2RoughCfg.rewards.scales.dof_error_named != 0 else ""),
-            ("_pStand" + np.format_float_scientific(Go2RoughCfg.rewards.scales.stand_still, precision= 1, trim= "-") if Go2RoughCfg.rewards.scales.stand_still != 0 else ""),
-            ("_noResume" if not resume else "_from" + "_".join(load_run.split("/")[-1].split("_")[:2])),
-        ])
+        run_name = "".join(["Go2Rough"])
 
-        max_iterations = 2000
-        save_interval = 2000
+        max_iterations = 5000
+        save_interval = 1000
         log_interval = 100

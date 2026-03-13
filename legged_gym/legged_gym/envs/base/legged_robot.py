@@ -90,6 +90,7 @@ class LeggedRobot(BaseTask):
         Args:
             actions (torch.Tensor): Tensor of shape (num_envs, num_actions_per_env)
         """
+        self.action_history_buf = torch.cat([self.action_history_buf[:, 1:].clone(), actions[:, None, :].clone()], dim=1)
         self.pre_physics_step(actions)
         # step physics and render each frame
         self.render()
@@ -185,7 +186,14 @@ class LeggedRobot(BaseTask):
         self.base_lin_vel[:] = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.base_ang_vel[:] = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
         self.projected_gravity[:] = quat_rotate_inverse(self.base_quat, self.gravity_vec)
-
+        
+        # ========================add===================================
+        self.feet_pos = self.rigid_body_states[:, self.feet_indices, 0:3]
+        self.feet_vel = self.rigid_body_states[:, self.feet_indices, 7:10]
+        contact = self.contact_forces[:, self.feet_indices, 2] > 1.
+        self.contact_filt = torch.logical_or(contact, self.last_contacts) 
+        self.last_contacts = contact
+        # ========================add===================================
         self._post_physics_step_callback()
 
         # compute observations, rewards, resets, ...
@@ -285,6 +293,7 @@ class LeggedRobot(BaseTask):
             self.update_command_curriculum(env_ids)
         
         self._fill_extras(env_ids)
+        self.action_history_buf[env_ids] = 0.
 
         # reset robot states
         self._reset_dofs(env_ids)
@@ -295,23 +304,53 @@ class LeggedRobot(BaseTask):
 
     
     def compute_reward(self):
-        """ Compute rewards
-            Calls each reward function which had a non-zero scale (processed in self._prepare_reward_function())
-            adds each terms to the episode sums and to the total reward
-        """
         self.rew_buf[:] = 0.
+        
+        # 定义一个打印周期（比如每 500 个 step 打印一次）
+        # 你需要在 __init__ 中初始化 self.common_step_counter = 0
+        print_info = (self.common_step_counter % 500 == 0)
+        if print_info:
+            print("\n" + "-"*30)
+            print(f"Step: {self.common_step_counter} - Reward Breakdown:")
+
         for i in range(len(self.reward_functions)):
             name = self.reward_names[i]
-            rew = self.reward_functions[i]() * self.reward_scales[name]
+            raw_rew = self.reward_functions[i]()
+            raw_rew = torch.nan_to_num(raw_rew, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            # 计算带缩放的奖励
+            scale = self.reward_scales[name]
+            rew = raw_rew * scale
+            
+            # 打印当前项的平均贡献（取所有环境的平均值）
+            if print_info:
+                avg_rew = torch.mean(rew).item()
+                try:
+                    if abs(avg_rew) > 1e-5: # 只打印有数值的项
+                        print(f"  {name:25} | Scaled Avg: {avg_rew:8.4f} | Raw Avg: {torch.mean(raw_rew).item():8.4f}")
+                except:
+                    continue
+
+            rew = torch.clamp(rew, min=-5.0, max=5.0)
             self.rew_buf += rew
             self.episode_sums[name] += rew
+
         if self.cfg.rewards.only_positive_rewards:
             self.rew_buf[:] = torch.clip(self.rew_buf[:], min=0.)
-        # add termination reward after clipping
+
         if "termination" in self.reward_scales:
             rew = self._reward_termination() * self.reward_scales["termination"]
             self.rew_buf += rew
             self.episode_sums["termination"] += rew
+            if print_info:
+                print(f"  {'termination':25} | Scaled Avg: {torch.mean(rew).item():8.4f}")
+
+        # 最终截断
+        self.rew_buf[:] = torch.clamp(self.rew_buf[:], min=-10.0, max=10.0)
+        
+        if print_info:
+            print(f"  {'TOTAL REWARD':25} | Scaled Avg: {torch.mean(self.rew_buf).item():8.4f}")
+            print("-"*30)
     
     def _get_lin_vel_obs(self, privileged= False):
         # backward compatibile for proprioception obs components and use_lin_vel related args
@@ -986,6 +1025,15 @@ class LeggedRobot(BaseTask):
         self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.base_ang_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
         self.projected_gravity = quat_rotate_inverse(self.base_quat, self.gravity_vec)
+        
+        #===========add===========================
+        rigid_body_state_tensor = self.gym.acquire_rigid_body_state_tensor(self.sim)
+        self.rigid_body_states = gymtorch.wrap_tensor(rigid_body_state_tensor).view(self.num_envs, -1, 13)
+        self.num_dofs = 12
+        self.action_history_buf = torch.zeros(self.num_envs, self.cfg.env.history_len, self.num_dofs, device=self.device, dtype=torch.float)
+        self.feet_pos = self.rigid_body_states[:, self.feet_indices, 0:3]
+        self.feet_vel = self.rigid_body_states[:, self.feet_indices, 7:10]
+        #===========add===========================
         if self.cfg.terrain.measure_heights:
             self.height_points = self._init_height_points()
         self.measured_heights = 0
@@ -1204,6 +1252,7 @@ class LeggedRobot(BaseTask):
         self.episode_length_buf[env_ids] = 0
         self.reset_buf[env_ids] = 1
         self.max_power_per_timestep[env_ids] = 0.
+        self.action_history_buf[env_ids, :, :] = 0.
 
     def _prepare_reward_function(self):
         """ Prepares a list of reward functions, whcih will be called to compute the total reward.
@@ -1261,8 +1310,8 @@ class LeggedRobot(BaseTask):
     def _create_onboard_camera(self, env_handle, actor_handle, sensor_name):
         camera_props = gymapi.CameraProperties()
         camera_props.enable_tensors = True
-        camera_props.height = getattr(self.cfg.sensor, sensor_name).resolution[0]
-        camera_props.width = getattr(self.cfg.sensor, sensor_name).resolution[1]
+        camera_props.height = getattr(self.cfg.sensor, sensor_name).resolution[0]#120
+        camera_props.width = getattr(self.cfg.sensor, sensor_name).resolution[1]#160
         if hasattr(getattr(self.cfg.sensor, sensor_name), "near_plane"):
             camera_props.near_plane = getattr(self.cfg.sensor, sensor_name).near_plane
         if hasattr(getattr(self.cfg.sensor, sensor_name), "horizontal_fov"):
@@ -1816,7 +1865,7 @@ class LeggedRobot(BaseTask):
         contact_filt = torch.logical_or(contact, last_contact) 
         first_contact = (self.feet_air_time > 0.) * contact_filt
         self.feet_air_time += self.dt
-        rew_airTime = torch.sum((self.feet_air_time - 0.5) * first_contact, dim=1) # reward only on first contact with the ground
+        rew_airTime = torch.sum(torch.clip(self.feet_air_time - 0.3, min=0.) * first_contact, dim=1)  # 只奖励超过0.3秒的，不惩罚短悬空
         rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
         self.feet_air_time *= ~contact_filt
         return rew_airTime
@@ -1830,31 +1879,31 @@ class LeggedRobot(BaseTask):
         # Penalize motion at zero commands
         return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) \
             * (torch.norm(self.commands[:, :2], dim=1) < 0.1) \
-            * (torch.abs(self.commands[:, 2] < 0.2))
+            * (torch.abs(self.commands[:, 2]) < 0.2)
     
     def _reward_stop_lin_vel(self):
         # Penalize x/y/z speed at zero commands
         return torch.sum(torch.square(self.base_lin_vel), dim=1) \
             * (torch.norm(self.commands[:, :2], dim=1) < 0.1) \
-            * (torch.abs(self.commands[:, 2] < 0.2))
+            * (torch.abs(self.commands[:, 2]) < 0.2)
     
     def _reward_stop_ang_vel(self):
         # Penalize angular speed at zero commands
         return torch.sum(torch.square(self.base_ang_vel), dim=1) \
             * (torch.norm(self.commands[:, :2], dim=1) < 0.1) \
-            * (torch.abs(self.commands[:, 2] < 0.2))
+            * (torch.abs(self.commands[:, 2]) < 0.2)
     
     def _reward_stop_dof_vel(self):
         # Penalize dof velocities at zero commands
         return torch.sum(torch.square(self.dof_vel), dim=1) \
             * (torch.norm(self.commands[:, :2], dim=1) < 0.1) \
-            * (torch.abs(self.commands[:, 2] < 0.2))
+            * (torch.abs(self.commands[:, 2]) < 0.2)
     
     def _reward_stop_yaw_vel(self):
         # Penalize yaw speed at zero commands
         return torch.square(self.base_ang_vel[:, 2]) \
             * (torch.norm(self.commands[:, :2], dim=1) < 0.1) \
-            * (torch.abs(self.commands[:, 2] < 0.2))
+            * (torch.abs(self.commands[:, 2]) < 0.2)
     
     def _reward_lazy_stop(self):
         # Penalize too slow when command is not below cutoff threshold
@@ -1888,6 +1937,69 @@ class LeggedRobot(BaseTask):
         exceeded_torques[exceeded_torques < 0.] = 0.
         # sum along decimation axis and dof axis
         return torch.norm(exceeded_torques, p= 1, dim= -1).sum(dim= 1)
+    #=======================add========================
+    def _reward_action_smoothness(self):
+        # 计算二阶差分
+        diff = self.action_history_buf[:,-1,:] - 2*self.action_history_buf[:,-2,:] + self.action_history_buf[:,-3,:]
+        error = torch.sum(torch.square(diff), dim=1)
+        
+        # 方案 A：使用负指数（最推荐，数值极度稳定）
+        # 这样奖励永远在 [0, 1] 之间，不会爆炸
+        return 1.0 - torch.exp(-error * 0.1) 
+    
+    # 方案 B：硬截断
+    # return torch.clamp(error, 0, 10.0)
+    def _reward_feet_contact_forces(self):
+        # penalize high contact forces
+        return torch.clamp(-self.projected_gravity[:,2],0,1)*torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  100).clip(min=0.), dim=1)
+    
+    def _reward_foot_clearance(self):
+        cur_footpos_translated = self.feet_pos - self.root_states[:, 0:3].unsqueeze(1)
+        footpos_in_body_frame = torch.zeros(self.num_envs, len(self.feet_indices), 3, device=self.device)
+        cur_footvel_translated = self.feet_vel - self.root_states[:, 7:10].unsqueeze(1)
+        footvel_in_body_frame = torch.zeros(self.num_envs, len(self.feet_indices), 3, device=self.device)
+        for i in range(len(self.feet_indices)):
+            footpos_in_body_frame[:, i, :] = quat_rotate_inverse(self.base_quat, cur_footpos_translated[:, i, :])
+            footvel_in_body_frame[:, i, :] = quat_rotate_inverse(self.base_quat, cur_footvel_translated[:, i, :])
+        
+        height_error = torch.square(footpos_in_body_frame[:, :, 2] - self.cfg.rewards.clearance_height_target).view(self.num_envs, -1)
+        foot_leteral_vel = torch.sqrt(torch.sum(torch.square(footvel_in_body_frame[:, :, :2]), dim=2)).view(self.num_envs, -1)
+        #no_contact = 1.*(self.contact_filt == 0)
+
+        clearance_reward = height_error * foot_leteral_vel 
+        
+        return torch.sum(clearance_reward, dim=1)
+    
+    def _reward_foot_mirror(self):
+        diff1 = torch.sum(torch.square(self.dof_pos[:,[0,1,2]] - self.dof_pos[:,[9,10,11]]),dim=-1)
+        diff2 = torch.sum(torch.square(self.dof_pos[:,[3,4,5]] - self.dof_pos[:,[6,7,8]]),dim=-1)
+        return 0.5*(diff1 + diff2)
+    
+    def _reward_foot_slide(self):
+        cur_footvel_translated = self.feet_vel - self.root_states[:, 7:10].unsqueeze(1)
+        footvel_in_body_frame = torch.zeros(self.num_envs, len(self.feet_indices), 3, device=self.device)
+        for i in range(len(self.feet_indices)):
+            footvel_in_body_frame[:, i, :] = quat_rotate_inverse(self.base_quat, cur_footvel_translated[:, i, :])
+        foot_leteral_vel = torch.sqrt(torch.sum(torch.square(footvel_in_body_frame[:, :, :2]), dim=2)).view(self.num_envs, -1)
+        
+        cost_slide = torch.sum(self.contact_filt * foot_leteral_vel, dim=1)
+        return cost_slide
+    
+    def _reward_has_contact(self):
+        contact_filt = 1.*self.contact_filt
+        return(torch.norm(self.commands[:, :2], dim=1) < 0.1)*torch.sum(contact_filt,dim=-1)/4 
+    
+    def _reward_hip_pos(self):
+        #return torch.sum(torch.square(self.dof_pos[:, [0, 3, 6, 9]] - self.default_dof_pos[:, [0, 3, 6, 9]]), dim=1)
+        # flag = 1.*(torch.abs(self.commands[:,1]) == 0)
+        # return flag * torch.sum(torch.square(self.dof_pos[:, [0, 3, 6, 9]] - torch.zeros_like(self.dof_pos[:, [0, 3, 6, 9]])), dim=1)
+        return torch.sum(torch.square(self.dof_pos[:, [0, 3, 6, 9]] - torch.zeros_like(self.dof_pos[:, [0, 3, 6, 9]])), dim=1)
+    
+    def _reward_powers(self):
+        # Penalize torques
+        return torch.sum(torch.abs(self.torques)*torch.abs(self.dof_vel), dim=1)
+        #return torch.sum(torch.multiply(self.torques, self.dof_vel), dim=1)
+    #=======================add========================
     
     def _reward_exceed_torque_limit_ratio(self):
         """ ratio of exceeded torque to the limit """

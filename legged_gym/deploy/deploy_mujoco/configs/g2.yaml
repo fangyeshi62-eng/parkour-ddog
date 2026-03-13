@@ -1,5 +1,5 @@
 # 
-policy_path: "{LEGGED_GYM_ROOT_DIR}/deploy/pre_train/g2/policy_gru_22.pt"
+policy_path: "/home/sfy/parkour/legged_gym/deploy/pre_train/g2/policy_gru_0313.pt"
 xml_path: "{LEGGED_GYM_ROOT_DIR}/resources/robots/go2/scene.xml"
 
 # Total simulation time

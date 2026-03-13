@@ -12,7 +12,7 @@ class Go2FieldCfg( Go2RoughCfg ):
 
     class sensor( Go2RoughCfg.sensor):
         class proprioception( Go2RoughCfg.sensor.proprioception ):
-            # latency_range = [0.0, 0.0]
+            # latency_range = [0.0, 0.0]write
             latency_range = [0.005, 0.045] # [s]
 
     class terrain( Go2RoughCfg.terrain ):
@@ -44,7 +44,7 @@ class Go2FieldCfg( Go2RoughCfg ):
                 # fake_offset= 0.1,
             ),
             leap= dict(
-                length= [0.05, 0.8],
+                length= [0.05, 1.5],
                 depth= [0.5, 0.8],
                 height= 0.2, # expected leap height over the gap
                 # fake_offset= 0.1,
@@ -163,21 +163,29 @@ class Go2FieldCfg( Go2RoughCfg ):
         timeout_at_finished = False
 
     class rewards( Go2RoughCfg.rewards ):
-        class scales:
-            tracking_lin_vel = 1.
-            tracking_ang_vel = 1.
+        class scales(Go2RoughCfg.rewards.scales):
             energy_substeps = -2e-7
-            torques = -1e-7
-            stand_still = -1.
-            dof_error_named = -1.
+            dof_error_named = -0.1
             dof_error = -0.005
-            collision = -0.05
-            lazy_stop = -3.
+            lazy_stop = -1.0
             # penalty for hardware safety
             exceed_dof_pos_limits = -0.1
             exceed_torque_limits_l1norm = -0.1
             # penetration penalty
-            penetrate_depth = -0.05
+            penetrate_depth = -0.01
+            
+            hip_pos = 0
+            powers = 0
+            has_contact = 0
+            
+            has_contact = 0
+            stand_still = 0
+            foot_mirror = 0.0    # 禁用
+            foot_slide = 0.0     # 禁用
+            stumble = 0.0        # 禁用
+            
+        base_height_target = 0.35
+            
 
     class noise( Go2RoughCfg.noise ):
         add_noise = False
@@ -197,33 +205,12 @@ class Go2FieldCfgPPO( Go2RoughCfgPPO ):
 
         resume = True
         load_run = osp.join(logs_root, "rough_go2",
-            "Feb09_09-18-42_Go2Rough_pEnergy-2e-05_pDofErr-1e-02_pDofErrN-1e+00_pStand-2e+00_noResume",
+            "/root/mym/parkour-main/legged_gym/logs/rough_go2/Mar12_06-30-27_Go2Rough",
         )
 
-        run_name = "".join(["Go2_",
-            ("{:d}skills".format(len(Go2FieldCfg.terrain.BarrierTrack_kwargs["options"]))),
-            ("_pEnergy" + np.format_float_scientific(-Go2FieldCfg.rewards.scales.energy_substeps, precision=2)),
-            # ("_pDofErr" + np.format_float_scientific(-Go2FieldCfg.rewards.scales.dof_error, precision=2) if getattr(Go2FieldCfg.rewards.scales, "dof_error", 0.) != 0. else ""),
-            # ("_pHipDofErr" + np.format_float_scientific(-Go2FieldCfg.rewards.scales.dof_error_named, precision=2) if getattr(Go2FieldCfg.rewards.scales, "dof_error_named", 0.) != 0. else ""),
-            # ("_pStand" + np.format_float_scientific(Go2FieldCfg.rewards.scales.stand_still, precision=2)),
-            # ("_pTerm" + np.format_float_scientific(Go2FieldCfg.rewards.scales.termination, precision=2) if hasattr(Go2FieldCfg.rewards.scales, "termination") else ""),
-            ("_pTorques" + np.format_float_scientific(Go2FieldCfg.rewards.scales.torques, precision=2) if hasattr(Go2FieldCfg.rewards.scales, "torques") else ""),
-            # ("_pColl" + np.format_float_scientific(Go2FieldCfg.rewards.scales.collision, precision=2) if hasattr(Go2FieldCfg.rewards.scales, "collision") else ""),
-            ("_pLazyStop" + np.format_float_scientific(Go2FieldCfg.rewards.scales.lazy_stop, precision=2) if hasattr(Go2FieldCfg.rewards.scales, "lazy_stop") else ""),
-            # ("_trackSigma" + np.format_float_scientific(Go2FieldCfg.rewards.tracking_sigma, precision=2) if Go2FieldCfg.rewards.tracking_sigma != 0.25 else ""),
-            # ("_pPenV" + np.format_float_scientific(-Go2FieldCfg.rewards.scales.penetrate_volume, precision=2)),
-            ("_pPenD" + np.format_float_scientific(-Go2FieldCfg.rewards.scales.penetrate_depth, precision=2)),
-            # ("_pTorqueL1" + np.format_float_scientific(-Go2FieldCfg.rewards.scales.exceed_torque_limits_l1norm, precision=2)),
-            ("_penEasier{:d}".format(Go2FieldCfg.curriculum.penetrate_depth_threshold_easier)),
-            ("_penHarder{:d}".format(Go2FieldCfg.curriculum.penetrate_depth_threshold_harder)),
-            # ("_leapMin" + np.format_float_scientific(Go2FieldCfg.terrain.BarrierTrack_kwargs["leap"]["length"][0], precision=2)),
-            ("_leapHeight" + np.format_float_scientific(Go2FieldCfg.terrain.BarrierTrack_kwargs["leap"]["height"], precision=2)),
-            ("_motorTorqueClip" if Go2FieldCfg.control.motor_clip_torque else ""),
-            # ("_noMoveupWhenFall" if Go2FieldCfg.curriculum.no_moveup_when_fall else ""),
-            ("_noResume" if not resume else "_from" + "_".join(load_run.split("/")[-1].split("_")[:2])),
-        ])
+        run_name = "".join(["Go2_"])
 
-        max_iterations = 38000
-        save_interval = 10000
+        max_iterations = 10000
+        save_interval = 1000
         log_interval = 100
         

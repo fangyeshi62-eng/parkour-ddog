@@ -120,7 +120,7 @@ class BaseTask():
     def reset(self):
         """ Reset all robots"""
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
-        obs, privileged_obs, _, _, _ = self.step(torch.zeros(self.num_envs, self.num_actions, device=self.device, requires_grad=False))
+        obs, privileged_obs, _, _, _= self.step(torch.zeros(self.num_envs, self.num_actions, device=self.device, requires_grad=False))
         return obs, privileged_obs
 
     def step(self, actions):
@@ -131,13 +131,22 @@ class BaseTask():
             # check for window closed
             if self.gym.query_viewer_has_closed(self.viewer):
                 sys.exit()
-
-            # check for keyboard events
-            for evt in self.gym.query_viewer_action_events(self.viewer):
-                if evt.action == "QUIT" and evt.value > 0:
-                    sys.exit()
-                elif evt.action == "toggle_viewer_sync" and evt.value > 0:
-                    self.enable_viewer_sync = not self.enable_viewer_sync
+                
+            # 1. 获取机器人实时位置 (Root Position)
+            # self.root_states 是在 post_physics_step 中刷新的
+            root_pos = self.root_states[0, 0:3] 
+            
+            # 2. 计算相机坐标 (Vec3 需要 python float)
+            x, y, z = root_pos[0].item(), root_pos[1].item(), root_pos[2].item()
+            
+            # 设定：在机器人后方 2.0米，高度 1.5米
+            cam_pos = gymapi.Vec3(x - 2.0, y - 1, z + 1)
+            # 设定：相机盯着机器人的身体中心
+            cam_target = gymapi.Vec3(x, y, z)
+            
+            # 3. 使用你列表中找到的正确函数名
+            self.gym.viewer_camera_look_at(self.viewer, self.envs[0], cam_pos, cam_target)
+            
 
             # fetch results
             if self.device != 'cpu':

@@ -95,6 +95,9 @@ LstmHiddenState = namedarraytuple('LstmHiddenState', ['hidden', 'cell'])
 class Memory(torch.nn.Module):
     def __init__(self, input_size, type='lstm', num_layers=1, hidden_size=256):
         super().__init__()
+        input_size = int(input_size)
+        hidden_size = int(hidden_size)
+        num_layers = int(num_layers)
         # RNN currently support only GRU and LSTM
         rnn_cls = nn.GRU if type.lower() == 'gru' else nn.LSTM
         self.rnn = rnn_cls(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers)

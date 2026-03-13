@@ -192,7 +192,6 @@ def get_args(custom_args=[]):
     return args
 
 def export_policy_as_jit(actor_critic, path):
-    print(f"正在准备导出模型，输入对象类型为: {type(actor_critic)}")
     if hasattr(actor_critic, 'memory_a'):
         rnn_module = actor_critic.memory_a.rnn
         
@@ -248,41 +247,16 @@ class PolicyExporterLSTM(torch.nn.Module):
 class PolicyExporterGRU(torch.nn.Module):
     def __init__(self, actor_critic):
         super().__init__()
-
-        self.estimator = None
-        self.encoders = None
+        self.actor = copy.deepcopy(actor_critic.actor)
+        self.is_recurrent = actor_critic.is_recurrent
+        self.memory = copy.deepcopy(actor_critic.memory_a.rnn)
         
-        if hasattr(actor_critic, 'estimator'):
-            self.estimator = copy.deepcopy(actor_critic.estimator)
-            first_layer = self.estimator.model[0] 
-            if isinstance(first_layer, torch.nn.Linear):
-                print(f">>> [DEBUG] Estimator 期望的输入维度是: {first_layer.in_features}")
-        elif hasattr(actor_critic, 'state_estimator'): # 兼容可能的备用名
-            print("State Estimator 结构:", actor_critic.state_estimator)
-            self.estimator = copy.deepcopy(actor_critic.state_estimator)
-            first_layer = self.estimator.model[0] 
-            if isinstance(first_layer, torch.nn.Linear):
-                print(f">>> [DEBUG] Estimator 1期望的输入维度是: {first_layer.in_features}")
-
-        if hasattr(actor_critic, 'estimator_obs_segments'):  
-            print("Estimator 观测段分布:", actor_critic.estimator_obs_segments)
-
-        if self.estimator is not None:
-            self.estimator.cpu()
-            print(">>> 成功提取 Estimator 模块")
-        else:
-            print(">>> 警告: 未找到 Estimator 模块！请检查 actor_critic 的属性名")
-
-
         if hasattr(actor_critic, 'encoders'):
             self.encoders = copy.deepcopy(actor_critic.encoders)
             self.encoders.cpu()
         else:
             self.encoders = None
 
-        self.actor = copy.deepcopy(actor_critic.actor)
-        self.is_recurrent = actor_critic.is_recurrent
-        self.memory = copy.deepcopy(actor_critic.memory_a.rnn)
         self.actor.cpu()
         self.memory.cpu()
 
@@ -297,55 +271,34 @@ class PolicyExporterGRU(torch.nn.Module):
                 module.input_size = int(module.input_size)
                 module.hidden_size = int(module.hidden_size)
                 module.num_layers = int(module.num_layers)
-            # 2. 专门修复 MlpModel 等模块中的 numpy.int64 属性
-            # 遍历该模块的所有变量名，如果是 numpy 类型则强制转为 python int
-            for attr_name in dir(module):
-                # 过滤掉方法和私有内置属性，只处理可能的数据属性
-                if not attr_name.startswith('__'):
-                    try:
-                        val = getattr(module, attr_name)
-                        if isinstance(val, (np.integer, np.int64)):
-                            setattr(module, attr_name, int(val))
-                    except Exception:
-                        continue
+
         # 注册 buffer
         self.register_buffer('hidden_state', torch.zeros(self.memory.num_layers, 1, self.memory.hidden_size))
 
     def forward(self, x):
-        # x 形状为 [batch, 279]
-        # 索引分配：
-        # 0:3   -> lin_vel (空/无效)
-        # 3:28  -> ang_vel(3), gravity(3), commands(3), dof_pos(12), dof_vel(12) [共25维]
-        # 28:48 -> last_actions(12) 及其他 [补位]
-        # 48:279-> height_measurements [共231维]
+        # x 的输入维度是 279
+        # 1. 切片：前 48 维直接使用，后 231 维进入 encoder
+        obs_direct = x[:, :48]       # 形状: [batch, 48]
+        obs_to_encode = x[:, 48:]    # 形状: [batch, 231]
 
-        # --- 步骤 A: 构造 Estimator 的输入 (256维) ---
-        proprio_for_est = x[:, 3:28]  # 25维基础本体
-        visual_for_est = x[:, 48:279] # 231维高程图
-        obs_for_estimator = torch.cat([proprio_for_est, visual_for_est], dim=-1) # 256维，对齐了！
-
-        # --- 步骤 B: 估计线速度 ---
-        if self.estimator is not None:
-            predicted_lin_vel = self.estimator(obs_for_estimator)
-        else:
-            predicted_lin_vel = torch.zeros(x.shape[0], 3, device=x.device)
-
-        # --- 步骤 C: 视觉编码 (用于主策略 GRU) ---
-        encoded_visual = visual_for_est
+        # 2. 编码过程
         if self.encoders is not None:
+            encoded_part = obs_to_encode
             for encoder in self.encoders:
-                encoded_visual = encoder(encoded_visual)
+                encoded_part = encoder(encoded_part)
+            # 编码后的 encoded_part 应该是 32 维
+        else:
+            encoded_part = obs_to_encode # 降级处理
 
-        # --- 步骤 D: 组装 GRU 的输入 (80维) ---
-        # 训练时 GRU 期望：[lin_vel(3), 完整本体感知(45), 视觉特征(32)]
-        obs_proprio_45 = x[:, 3:48] # 包含 ang_vel 到 last_actions
-        x_combined = torch.cat([predicted_lin_vel, obs_proprio_45, encoded_visual], dim=-1)
+        # 3. 拼接：将直接观测 (48) 和 编码特征 (32) 拼接成 80 维
+        # dim=-1 确保在特征维度拼接
+        x_combined = torch.cat([obs_direct, encoded_part], dim=-1)
 
-        # --- 步骤 E: GRU 推理与记忆更新 ---
+        # 4. 经过 GRU (需要增加序列维度)
         out, h = self.memory(x_combined.unsqueeze(0), self.hidden_state)
-        self.hidden_state[:] = h # 更新记忆
+        self.hidden_state[:] = h
         
-        # --- 步骤 F: Actor 输出动作 ---
+        # 5. 经过 Actor MLP
         return self.actor(out.squeeze(0))
 
     @torch.jit.export
@@ -355,7 +308,7 @@ class PolicyExporterGRU(torch.nn.Module):
 
     def export(self, path):
         os.makedirs(path, exist_ok=True)
-        path = os.path.join(path, 'policy_gru_0312.pt')
+        path = os.path.join(path, 'policy_gru_0313.pt')
         self.to('cpu')
         
         # 导出为 TorchScript 模块
