@@ -6,14 +6,14 @@ from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobot
 
 ddog_action_scale = 0.5
 ddog_const_dof_range = dict(
-    Hip_max= 1.0472,
-    Hip_min= -1.0472,
-    Front_Thigh_max= 3.4907,
-    Front_Thigh_min= -1.5708,
-    Rear_Thingh_max= 4.5379,
-    Rear_Thingh_min= -0.5236,
-    Calf_max= -0.83776,
-    Calf_min= -2.7227,
+    Hip_max= 1.047,
+    Hip_min= -1.047,
+    Front_Thigh_max= 3.49,
+    Front_Thigh_min= -0.523,
+    Rear_Thigh_max= 3.49,
+    Rear_Thigh_min= -0.523,
+    Calf_max= -0.66,
+    Calf_min= -2.757,
 )
 
 class Ddog2RoughCfg( LeggedRobotCfg ):
@@ -81,7 +81,7 @@ class Ddog2RoughCfg( LeggedRobotCfg ):
             ang_vel_yaw = [-2., 2.]
 
     class init_state( LeggedRobotCfg.init_state ):
-        pos = [0., 0., 0.3] # [m]
+        pos = [0., 0., 0.38] # [m]
         default_joint_angles = { # 12 joints in the order of simulation
             "FL_hip_joint": 0.1,
             "FL_thigh_joint": 0.95,
@@ -132,34 +132,34 @@ class Ddog2RoughCfg( LeggedRobotCfg ):
     class domain_rand( LeggedRobotCfg.domain_rand ):
         randomize_com = True
         class com_range:
-            x = [-0.2, 0.2]
-            y = [-0.1, 0.1]
+            x = [-0.05, 0.05]
+            y = [-0.05, 0.05]
             z = [-0.05, 0.05]
 
-        randomize_motor = True
+        randomize_motor = False
         leg_motor_strength_range = [0.8, 1.2]
 
         randomize_base_mass = True
-        added_mass_range = [1.0, 3.0]
+        added_mass_range = [1.0, 1.5]
 
         randomize_friction = True
         friction_range = [0., 2.]
 
         init_base_pos_range = {"x": [0.0, 0.0], "y": [0.0, 0.0]}
         init_base_vel_range = [0.0, 0.0]
-        init_base_rot_range = {"roll": [0.0, 0.0], "pitch": [0.0, 0.0], "yaw": [0.0, 0.0]}
-        # init_base_rot_range = dict(
-        #     roll= [-0.75, 0.75],
-        #     pitch= [-0.75, 0.75],
-        # )
-        # init_base_vel_range = dict(
-        #     x= [-0.2, 1.5],
-        #     y= [-0.2, 0.2],
-        #     z= [-0.2, 0.2],
-        #     roll= [-1., 1.],
-        #     pitch= [-1., 1.],
-        #     yaw= [-1., 1.],
-        # )
+        #init_base_rot_range = {"roll": [0.0, 0.0], "pitch": [0.0, 0.0], "yaw": [0.0, 0.0]}
+        init_base_rot_range = dict(
+            roll= [-0.75, 0.75],
+            pitch= [-0.75, 0.75],
+        )
+        init_base_vel_range = dict(
+            x= [-0.2, 1.5],
+            y= [-0.2, 0.2],
+            z= [-0.2, 0.2],
+            roll= [-1., 1.],
+            pitch= [-1., 1.],
+            yaw= [-1., 1.],
+        )
         init_dof_vel_range = [-5, 5]
 
         push_robots = True 
@@ -168,17 +168,18 @@ class Ddog2RoughCfg( LeggedRobotCfg ):
 
     class rewards( LeggedRobotCfg.rewards ):
         class scales:
-            tracking_lin_vel = 2.
+            tracking_lin_vel = 1.5
             tracking_ang_vel = 1
             energy_substeps = -2e-5
             stand_still = -2.
             dof_error_named = -1.
-            dof_error = -0.01
+            dof_error = -0.03
             # penalty for hardware safety
             exceed_dof_pos_limits = -0.4
             exceed_torque_limits_l1norm = -0.4
             dof_vel_limits = -0.4
             termination = -2
+            foot_mirror_left_right = 0.5
         dof_error_names = ["FL_hip_joint", "FR_hip_joint", "RL_hip_joint", "RR_hip_joint"]
         only_positive_rewards = False
         soft_dof_vel_limit = 0.9
@@ -201,23 +202,23 @@ class Ddog2RoughCfg( LeggedRobotCfg ):
     class sim( LeggedRobotCfg.sim ):
         body_measure_points = { # transform are related to body frame
             "base": dict(
-                x= [i for i in np.arange(-0.24, 0.41, 0.03)],
-                y= [-0.08, -0.04, 0.0, 0.04, 0.08],
-                z= [i for i in np.arange(-0.061, 0.071, 0.03)],
-                transform= [0., 0., 0.005, 0., 0., 0.],
+                x= [i for i in np.arange(-0.14, 0.141, 0.03)],
+                y= [-0.1, -0.05, 0.0, 0.05, 0.1],
+                z= [i for i in np.arange(-0.05, 0.051, 0.03)],
+                transform= [0., 0., 0., 0., 0., 0.],
             ),
             "thigh": dict(
                 x= [
-                    -0.16, -0.158, -0.156, -0.154, -0.152,
-                    -0.15, -0.145, -0.14, -0.135, -0.13, -0.125, -0.12, -0.115, -0.11, -0.105, -0.1, -0.095, -0.09, -0.085, -0.08, -0.075, -0.07, -0.065, -0.05,
-                    0.0, 0.05, 0.1,
+                    -0.18, -0.178, -0.175, -0.17, -0.16,
+                    -0.15, -0.14, -0.12, -0.1, -0.08, -0.06 , -0.04, -0.02,
+                    0.0, 0.02, 0.04 ,
                 ],
-                y= [-0.015, -0.01, 0.0, -0.01, 0.015],
-                z= [-0.03, -0.015, 0.0, 0.015],
+                y= [-0.02, 0.0, 0.02 ],
+                z= [-0.02, 0.0, 0.02 ],
                 transform= [0., 0., -0.1,   0., 1.57079632679, 0.],
             ),
             "calf": dict(
-                x= [i for i in np.arange(-0.13, 0.111, 0.03)],
+                x= [i for i in np.arange(-0.15, 0.05, 0.03)],
                 y= [-0.015, 0.0, 0.015],
                 z= [-0.015, 0.0, 0.015],
                 transform= [0., 0., -0.11,   0., 1.57079632679, 0.],
@@ -266,7 +267,7 @@ class Ddog2RoughPPO( LeggedRobotCfgPPO ):
         experiment_name = "rough_ddog"
         
         resume = True
-        load_run = "/home/sfy/parkour/legged_gym/logs/rough_ddog/Feb11_08-00-01_DdogRough_pEnergy-2e-05_pDofErr-1e-02_pDofErrN-1e+00_pStand-2e+00_fromFeb11_00-18-51"
+        load_run = "/data/home/scxi678/run/Workspace/parkour_sfy-0313master/parkour_sfy-0313master/legged_gym/logs/rough_ddog/Mar17_16-49-32_DdogRough_pEnergy-2e-05_pDofErr-1e-02_pDofErrN-1e+00_pStand-4e+00_fromMar17_15-46-32"
 
         run_name = "".join(["DdogRough",
             ("_pEnergy" + np.format_float_scientific(Ddog2RoughCfg.rewards.scales.energy_substeps, precision= 1, trim= "-") if Ddog2RoughCfg.rewards.scales.energy_substeps != 0 else ""),
@@ -276,6 +277,6 @@ class Ddog2RoughPPO( LeggedRobotCfgPPO ):
             ("_noResume" if not resume else "_from" + "_".join(load_run.split("/")[-1].split("_")[:2])),
         ])
 
-        max_iterations = 1000
-        save_interval = 200
+        max_iterations = 4000
+        save_interval = 1000
         log_interval = 100

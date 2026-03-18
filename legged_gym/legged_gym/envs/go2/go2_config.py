@@ -280,7 +280,7 @@ class Go2RoughCfgPPO( LeggedRobotCfgPPO ):
         algorithm_class_name = "EstimatorPPO"
         experiment_name = "rough_go2"
         
-        resume = True
+        resume = False
         load_run = "/root/mym/parkour-main/legged_gym/logs/rough_go2/Mar12_02-25-57_Go2Rough"
 
         run_name = "".join(["Go2Rough"])

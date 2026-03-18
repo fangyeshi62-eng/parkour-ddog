@@ -247,6 +247,10 @@ def play(args):
             center_h = current_height_obs[len(current_height_obs)//2].item()
             print(f"Step: {i} | Height Obs Mean: {mean_h:.4f} | Center: {center_h:.4f}")
             print(obs.shape)
+            current_dof_pos = env.dof_pos[robot_index].detach().cpu().numpy()
+            
+            # 1. 如果你想看原始弧度数值：
+            print(f"Step: {i} | Joint Pos (rad): {current_dof_pos}")
         if RECORD_FRAMES:
             filename = os.path.join(
                 os.path.abspath("logs/images/"),

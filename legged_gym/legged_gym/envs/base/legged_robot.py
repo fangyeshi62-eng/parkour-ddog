@@ -1974,7 +1974,29 @@ class LeggedRobot(BaseTask):
         diff1 = torch.sum(torch.square(self.dof_pos[:,[0,1,2]] - self.dof_pos[:,[9,10,11]]),dim=-1)
         diff2 = torch.sum(torch.square(self.dof_pos[:,[3,4,5]] - self.dof_pos[:,[6,7,8]]),dim=-1)
         return 0.5*(diff1 + diff2)
-    
+
+    def _reward_foot_mirror_left_right(self):
+            """
+            根据 Ddog.urdf 的顺序 (FL, FR, RL, RR) 实现的左右镜像奖励
+            """
+            # 1. 提取各腿位置
+            fl = self.dof_pos[:, [0, 1, 2]]
+            fr = self.dof_pos[:, [3, 4, 5]]
+            rl = self.dof_pos[:, [6, 7, 8]]
+            rr = self.dof_pos[:, [9, 10, 11]]
+
+            # 2. 镜像处理：右侧腿的 Hip 关节 (索引0) 取反，才能与左侧对齐
+            fr_m = fr.clone()
+            fr_m[:, 0] *= -1
+            rr_m = rr.clone()
+            rr_m[:, 0] *= -1
+
+            # 3. 计算偏差
+            # 如果你觉得太严格，可以只算 Thigh(1) 和 Calf(2)
+            error_front = torch.sum(torch.square(fl - fr_m), dim=-1)
+            error_rear = torch.sum(torch.square(rl - rr_m), dim=-1)
+
+            return -(error_front + error_rear)
     def _reward_foot_slide(self):
         cur_footvel_translated = self.feet_vel - self.root_states[:, 7:10].unsqueeze(1)
         footvel_in_body_frame = torch.zeros(self.num_envs, len(self.feet_indices), 3, device=self.device)
